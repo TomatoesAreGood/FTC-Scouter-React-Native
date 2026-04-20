@@ -1,10 +1,11 @@
 {
   "expo": {
-    "name": "FTC-Scouter-React-Native",
+    "name": "FTC ScoutMaster",
     "slug": "FTC-Scouter-React-Native",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "ftcscouter",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -24,7 +25,11 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router"
+    ]
   }
 }
