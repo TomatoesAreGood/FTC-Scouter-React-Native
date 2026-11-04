@@ -1,55 +1,52 @@
 import {
-  EventListing, ExtendedEventListing, TeamListing,
-  TeamPerformanceData, HybridMatchData, Award,
+  EventListing, TeamListing, TeamPerformanceData, HybridMatchData, Award, MatchTeam, SeasonSummary,
 } from './models';
 import { AWARD_NAMES, API_BASE, TOURNAMENT_LEVELS } from './constants';
+
+const REQUEST_TIMEOUT_MS = 20000;
+
+/**
+ * fetch with a timeout, so a stalled connection (common on venue wifi) surfaces as an
+ * error with a Retry button instead of an endless spinner. The timer is intentionally
+ * left running until it fires so it also covers reading the response body; aborting an
+ * already-completed request is a no-op.
+ */
+function apiFetch(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: controller.signal });
+}
 
 function makeAuthHeader(user: string, token: string): Record<string, string> {
   const encoded = btoa(`${user}:${token}`);
   return { Authorization: `Basic ${encoded}` };
 }
 
+// Types 12–16 are Kickoff, Workshop, Demo/Exhibition, Volunteer Signup and Practice Day:
+// listings with no competition data, so they're left out of the app.
+const NON_COMPETITION_TYPES = new Set([12, 13, 14, 15, 16]);
+
 function parseEventList(raw: any[]): EventListing[] {
   const events: EventListing[] = [];
   for (const e of raw) {
-    const type = typeof e['type'] === 'string' ? parseInt(e['type']) : e['type'];
-    if (type < 12 || type > 16) {
-      events.push({
-        name: e['name'],
-        country: e['country'],
-        city: e['city'],
-        dateStart: (e['dateStart'] as string).substring(0, 10),
-        dateEnd: (e['dateEnd'] as string).substring(0, 10),
-        code: e['code'],
-        type,
-        venue: e['venue'] ?? null,
-        website: e['website'] ?? null,
-        liveStream: e['liveStreamUrl'] ?? null,
-      });
-    }
-  }
-  return events;
-}
-
-function parseExtendedEventList(raw: any[]): ExtendedEventListing[] {
-  const events: ExtendedEventListing[] = [];
-  for (const e of raw) {
-    const type = typeof e['type'] === 'string' ? parseInt(e['type']) : e['type'];
-    if (type < 12 || type > 16) {
-      events.push({
-        name: e['name'],
-        country: e['country'],
-        city: e['city'],
-        dateStart: (e['dateStart'] as string).substring(0, 10),
-        dateEnd: (e['dateEnd'] as string).substring(0, 10),
-        code: e['code'],
-        type,
-        venue: e['venue'] ?? null,
-        website: e['website'] ?? null,
-        liveStream: e['liveStreamUrl'] ?? null,
-        year: e['year'],
-      });
-    }
+    const type = typeof e['type'] === 'string' ? parseInt(e['type'], 10) : e['type'];
+    if (NON_COMPETITION_TYPES.has(type)) continue;
+    events.push({
+      name: e['name'] ?? '',
+      country: e['country'] ?? '',
+      city: e['city'] ?? '',
+      dateStart: String(e['dateStart'] ?? '').substring(0, 10),
+      dateEnd: String(e['dateEnd'] ?? '').substring(0, 10),
+      code: e['code'],
+      type,
+      typeName: typeof e['typeName'] === 'string' ? e['typeName'] : null,
+      remote: e['remote'] === true,
+      hybrid: e['hybrid'] === true,
+      divisionCode: e['divisionCode'] || null,
+      venue: e['venue'] ?? null,
+      website: e['website'] ?? null,
+      liveStream: e['liveStreamUrl'] ?? null,
+    });
   }
   return events;
 }
@@ -58,7 +55,7 @@ function parseTeamList(raw: any[]): TeamListing[] {
   return raw.map((t) => ({
     teamNumber: t['teamNumber'],
     rookieYear: t['rookieYear'],
-    teamName: t['nameShort'],
+    teamName: t['nameShort'] ?? '',
     city: t['city'] ?? '',
     stateProv: t['stateProv'] ?? '',
     country: t['country'] ?? '',
@@ -66,31 +63,50 @@ function parseTeamList(raw: any[]): TeamListing[] {
   }));
 }
 
-function roundTwo(n: number): number {
-  const s = String(n);
-  if (s.length > 5) return parseFloat(n.toFixed(2));
-  return n;
+function num(n: unknown): number {
+  return typeof n === 'number' && isFinite(n) ? n : 0;
 }
 
-export async function validateCredentials(user: string, token: string): Promise<boolean> {
-  if (!user || !token) return false;
+export type CredentialCheck = 'valid' | 'invalid' | 'network-error';
+
+export async function validateCredentials(user: string, token: string): Promise<CredentialCheck> {
+  if (!user || !token) return 'invalid';
   try {
-    const res = await fetch(`${API_BASE}/2021`, {
+    const res = await apiFetch(`${API_BASE}/2021`, {
       headers: makeAuthHeader(user, token),
     });
-    return res.status === 200;
+    return res.status === 200 ? 'valid' : 'invalid';
   } catch {
-    return false;
+    return 'network-error';
   }
 }
 
+/** The newest season the API serves (it rejects anything later with HTTP 400). */
+export async function fetchMaxSeason(user: string, token: string): Promise<number | null> {
+  const res = await apiFetch(API_BASE, { headers: makeAuthHeader(user, token) });
+  if (res.status !== 200) return null;
+  const json = await res.json();
+  const max = json['maxSeason'] ?? json['currentSeason'];
+  return typeof max === 'number' ? max : null;
+}
+
+/** Game name and kickoff date for a season. */
+export async function fetchSeasonSummary(year: string, user: string, token: string): Promise<SeasonSummary> {
+  const res = await apiFetch(`${API_BASE}/${year}`, { headers: makeAuthHeader(user, token) });
+  if (res.status !== 200) throw new Error(`API error ${res.status}`);
+  const json = await res.json();
+  const gameName = typeof json['gameName'] === 'string' && json['gameName'].trim() ? json['gameName'].trim() : null;
+  const kickoff = typeof json['kickoff'] === 'string' && json['kickoff'].length >= 10 ? json['kickoff'].substring(0, 10) : null;
+  return { gameName, kickoff };
+}
+
 export async function fetchEvents(year: string, user: string, token: string): Promise<EventListing[]> {
-  const res = await fetch(`${API_BASE}/${year}/events`, {
+  const res = await apiFetch(`${API_BASE}/${year}/events`, {
     headers: makeAuthHeader(user, token),
   });
   if (res.status !== 200) throw new Error(`API error ${res.status}`);
   const json = await res.json();
-  return parseEventList(json['events']);
+  return parseEventList(json['events'] ?? []);
 }
 
 export async function fetchTeamsPage(
@@ -99,13 +115,13 @@ export async function fetchTeamsPage(
   user: string,
   token: string
 ): Promise<{ teams: TeamListing[]; pageTotal: number }> {
-  const res = await fetch(`${API_BASE}/${year}/teams?page=${page}`, {
+  const res = await apiFetch(`${API_BASE}/${year}/teams?page=${page}`, {
     headers: makeAuthHeader(user, token),
   });
   if (res.status !== 200) throw new Error(`API error ${res.status}`);
   const json = await res.json();
   return {
-    teams: parseTeamList(json['teams']),
+    teams: parseTeamList(json['teams'] ?? []),
     pageTotal: json['pageTotal'] ?? 1,
   };
 }
@@ -116,12 +132,12 @@ export async function searchTeamByNumber(
   user: string,
   token: string
 ): Promise<TeamListing | null> {
-  const res = await fetch(`${API_BASE}/${year}/teams?teamNumber=${teamNumber}`, {
+  const res = await apiFetch(`${API_BASE}/${year}/teams?teamNumber=${teamNumber}`, {
     headers: makeAuthHeader(user, token),
   });
   if (res.status !== 200) return null;
   const json = await res.json();
-  const teams = parseTeamList(json['teams']);
+  const teams = parseTeamList(json['teams'] ?? []);
   return teams.length > 0 ? teams[0] : null;
 }
 
@@ -131,7 +147,7 @@ export async function fetchEventRankings(
   user: string,
   token: string
 ): Promise<TeamPerformanceData[]> {
-  const res = await fetch(`${API_BASE}/${year}/rankings/${code}`, {
+  const res = await apiFetch(`${API_BASE}/${year}/rankings/${code}`, {
     headers: makeAuthHeader(user, token),
   });
   if (res.status !== 200) throw new Error(`API error ${res.status}`);
@@ -140,37 +156,68 @@ export async function fetchEventRankings(
   const json = JSON.parse(text);
   const rankings = json['rankings'] ?? [];
   return rankings.map((r: any) => ({
-    rank: r['rank'],
+    rank: num(r['rank']),
     teamNumber: r['teamNumber'],
     teamName: r['teamName'] ?? null,
-    wins: r['wins'],
-    ties: r['ties'],
-    losses: r['losses'],
-    rankingPoints: roundTwo(r['sortOrder1']),
-    tieBreakerPoints: roundTwo(r['sortOrder2']),
+    wins: num(r['wins']),
+    ties: num(r['ties']),
+    losses: num(r['losses']),
+    matchesPlayed: num(r['matchesPlayed']),
+    sortOrders: [1, 2, 3, 4, 5, 6].map((i) => num(r[`sortOrder${i}`])),
   }));
 }
 
+function stationOrder(station: string): number {
+  const n = parseInt(station.replace(/\D/g, ''), 10);
+  return isNaN(n) ? 99 : n;
+}
+
+/**
+ * Splits a match's teams into red / blue alliances, or `solo` for remote matches
+ * (station "1", one team, no alliance). Empty slots (station "Blue0", no team number)
+ * are byes and are dropped. On a 3-team alliance the API marks the team that sat out
+ * with onField=false; older seasons report onField=false for everyone, so a team only
+ * counts as sitting out when an alliance-mate in the same match is on the field.
+ */
 function parseSchedule(raw: any[]): HybridMatchData[] {
   return raw.map((s: any) => {
-    const blue: number[] = [];
-    const red: number[] = [];
-    for (const t of s['teams']) {
-      if ((t['station'] as string).startsWith('Red')) {
-        red.push(t['teamNumber'] ?? 0);
-      } else {
-        blue.push(t['teamNumber'] ?? 0);
-      }
+    const groups: Record<'red' | 'blue' | 'solo', { station: string; onField: boolean; team: MatchTeam }[]> = {
+      red: [], blue: [], solo: [],
+    };
+    for (const t of s['teams'] ?? []) {
+      if (t['teamNumber'] == null) continue;
+      const station = String(t['station'] ?? '');
+      const key = station.startsWith('Red') ? 'red' : station.startsWith('Blue') ? 'blue' : 'solo';
+      groups[key].push({
+        station,
+        onField: t['onField'] === true,
+        team: {
+          teamNumber: t['teamNumber'],
+          surrogate: t['surrogate'] === true,
+          dq: t['dq'] === true,
+          noShow: t['noShow'] === true,
+          sittingOut: false,
+        },
+      });
     }
+    const finish = (list: (typeof groups)['red']) => {
+      const anyOnField = list.some((x) => x.onField);
+      return list
+        .sort((a, b) => stationOrder(a.station) - stationOrder(b.station))
+        .map((x) => ({ ...x.team, sittingOut: anyOnField && !x.onField }));
+    };
     return {
-      blueTeam: blue,
-      redTeam: red,
-      scoreBlueFinal: s['scoreBlueFinal'] ?? 0,
-      scoreRedFinal: s['scoreRedFinal'] ?? 0,
+      red: finish(groups.red),
+      blue: finish(groups.blue),
+      solo: finish(groups.solo),
+      scoreBlueFinal: s['scoreBlueFinal'] ?? null,
+      scoreRedFinal: s['scoreRedFinal'] ?? null,
       matchNumber: s['matchNumber'],
       seriesNumber: s['series'],
       tournamentLevel: TOURNAMENT_LEVELS[s['tournamentLevel']] ?? 0,
-      isRedWin: s['redWins'],
+      description: typeof s['description'] === 'string' ? s['description'].replace(/\s+/g, ' ').trim() : null,
+      isRedWin: s['redWins'] === true,
+      isBlueWin: s['blueWins'] === true,
     };
   });
 }
@@ -182,8 +229,8 @@ export async function fetchEventSchedule(
   token: string
 ): Promise<HybridMatchData[][]> {
   const [qualRes, playoffRes] = await Promise.all([
-    fetch(`${API_BASE}/${year}/schedule/${code}/qual/hybrid`, { headers: makeAuthHeader(user, token) }),
-    fetch(`${API_BASE}/${year}/schedule/${code}/playoff/hybrid`, { headers: makeAuthHeader(user, token) }),
+    apiFetch(`${API_BASE}/${year}/schedule/${code}/qual/hybrid`, { headers: makeAuthHeader(user, token) }),
+    apiFetch(`${API_BASE}/${year}/schedule/${code}/playoff/hybrid`, { headers: makeAuthHeader(user, token) }),
   ]);
 
   const result: HybridMatchData[][] = [];
@@ -196,19 +243,30 @@ export async function fetchEventSchedule(
   if (playoffRes.status === 200) {
     const json = await playoffRes.json();
     const playoffMatches = parseSchedule(json['schedule'] ?? []);
+    // 2019–2023: semifinals + finals. 2024+: one double-elimination "PLAYOFF" bracket.
     const semis = playoffMatches.filter((m) => m.tournamentLevel === TOURNAMENT_LEVELS.SEMIFINAL);
     const finals = playoffMatches.filter((m) => m.tournamentLevel === TOURNAMENT_LEVELS.FINAL);
     const playoffs = playoffMatches.filter((m) => m.tournamentLevel === TOURNAMENT_LEVELS.PLAYOFF);
 
-    if (playoffs.length > 0) {
-      result.push(playoffs);
-    } else {
-      if (semis.length > 0) result.push(semis);
-      if (finals.length > 0) result.push(finals);
-    }
+    if (playoffs.length > 0) result.push(playoffs);
+    if (semis.length > 0) result.push(semis);
+    if (finals.length > 0) result.push(finals);
   }
 
   return result;
+}
+
+/**
+ * The API names each award entry individually, e.g. "Inspire Award 2nd Place" or
+ * "Winning Alliance - 1st Team Selected". Split that into the award (for grouping) and
+ * the placement/role (shown on the recipient's row).
+ */
+export function splitAwardName(raw: string): { name: string; detail: string | null } {
+  const place = raw.match(/^(.*?)\s+(\d+(?:st|nd|rd|th) Place)$/i);
+  if (place) return { name: place[1], detail: place[2] };
+  const role = raw.match(/^(.*?)\s+-\s+(.+)$/);
+  if (role) return { name: role[1], detail: role[2] };
+  return { name: raw, detail: null };
 }
 
 export async function fetchEventAwards(
@@ -217,22 +275,21 @@ export async function fetchEventAwards(
   user: string,
   token: string
 ): Promise<Award[]> {
-  const res = await fetch(`${API_BASE}/${year}/awards/${code}`, {
+  const res = await apiFetch(`${API_BASE}/${year}/awards/${code}`, {
     headers: makeAuthHeader(user, token),
   });
   if (res.status !== 200) throw new Error(`API error ${res.status}`);
   const json = await res.json();
   const awards: Award[] = [];
-  for (const a of json['awards']) {
-    if (AWARD_NAMES[a['awardId']] && a['teamNumber'] != null) {
-      awards.push({
-        awardId: a['awardId'],
-        series: a['series'],
-        teamNumber: a['teamNumber'],
-        name: AWARD_NAMES[a['awardId']] ?? null,
-        person: a['person'] ?? null,
-      });
-    }
+  for (const a of json['awards'] ?? []) {
+    const teamNumber = a['teamNumber'] ?? null;
+    const person = typeof a['person'] === 'string' && a['person'].trim() ? a['person'].trim() : null;
+    // Entries with neither a team nor a person are placeholders for awards not given.
+    if (teamNumber == null && !person) continue;
+    // Use the API's own name so awards added in later seasons show up correctly.
+    const rawName = typeof a['name'] === 'string' && a['name'].trim() ? a['name'].trim() : AWARD_NAMES[a['awardId']] ?? 'Award';
+    const { name, detail } = splitAwardName(rawName);
+    awards.push({ awardId: a['awardId'], series: num(a['series']), teamNumber, name, detail, person });
   }
   return awards;
 }
@@ -243,7 +300,7 @@ export async function fetchTeamEvents(
   user: string,
   token: string
 ): Promise<EventListing[]> {
-  const res = await fetch(`${API_BASE}/${year}/events?teamNumber=${teamNumber}`, {
+  const res = await apiFetch(`${API_BASE}/${year}/events?teamNumber=${teamNumber}`, {
     headers: makeAuthHeader(user, token),
   });
   if (res.status !== 200) return [];

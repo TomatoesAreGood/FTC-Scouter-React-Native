@@ -1,62 +1,50 @@
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AppHeader from '../components/AppHeader';
+import { openLink } from '../lib/utils';
+import { colors, fontSize, spacing } from '../lib/theme';
 
 const CONTACT_EMAIL = 'jonwu333@gmail.com';
 
 export default function ReportScreen() {
-  const router = useRouter();
+  const insets = useSafeAreaInsets();
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Report a Problem</Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.body}>
-        <Text style={styles.heading}>Having an issue?</Text>
+    <View style={styles.container}>
+      <AppHeader title="Report a Problem" />
+      <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing.xl }]}>
         <Text style={styles.paragraph}>
           If you encounter a bug, incorrect data, or have a feature request, please reach out via
           email. Include as much detail as possible about the issue.
         </Text>
         <Pressable
-          style={styles.emailBtn}
-          onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=FTC ScoutMaster - Report`)}
+          style={({ pressed }) => [styles.emailButton, pressed && styles.emailButtonPressed]}
+          onPress={() => openLink(`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('FTC ScoutMaster - Report')}`)}
+          accessibilityRole="link"
         >
-          <Ionicons name="mail-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.emailBtnText}>{CONTACT_EMAIL}</Text>
+          <Ionicons name="mail-outline" size={20} color={colors.brandDark} />
+          <Text style={styles.emailText} selectable>{CONTACT_EMAIL}</Text>
         </Pressable>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  header: {
+  container: { flex: 1, backgroundColor: colors.background },
+  body: { padding: spacing.xl - 4 },
+  paragraph: { fontSize: fontSize.body, color: colors.text, lineHeight: 22, marginBottom: spacing.xl },
+  emailButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: '#90EE90',
-  },
-  backBtn: { marginRight: 12 },
-  headerTitle: { fontSize: 18, fontWeight: '600' },
-  body: { padding: 24 },
-  heading: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
-  paragraph: { fontSize: 15, color: '#444', lineHeight: 22, marginBottom: 24 },
-  emailBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#70C5E8',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    gap: spacing.sm,
     alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.brandDark,
   },
-  emailBtnText: { color: '#fff', fontSize: 15 },
+  emailButtonPressed: { backgroundColor: colors.brandTint },
+  emailText: { fontSize: fontSize.body, color: colors.brandDark, fontWeight: '600' },
 });

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "FTC ScoutMaster",
-    "slug": "FTC-Scouter-React-Native",
+    "slug": "ftc-scouter",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -31,7 +31,19 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
-    ]
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "40835192-1656-4155-8fc7-181d00449b06"
+      }
+    },
+    "owner": "tomatoesaregoods-team"
   }
 }
