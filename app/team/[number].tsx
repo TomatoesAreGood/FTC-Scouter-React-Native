@@ -129,9 +129,16 @@ function TeamDetail({ team }: { team: ExtendedTeamListing }) {
       </View>
     );
   } else if (events && events.length === 0) {
+    // In the current season most events are still ahead, and teams only appear on an
+    // event once they've registered for it.
+    const isLatest = String(selectedYear) === app.seasons[app.seasons.length - 1];
     eventsContent = (
       <View style={styles.inlineState}>
-        <Text style={styles.inlineText}>No events for the {formatSeason(selectedYear)} season.</Text>
+        <Text style={styles.inlineText}>
+          {isLatest
+            ? `Not registered for any ${formatSeason(selectedYear)} events yet.`
+            : `No events for the ${formatSeason(selectedYear)} season.`}
+        </Text>
       </View>
     );
   } else if (events) {

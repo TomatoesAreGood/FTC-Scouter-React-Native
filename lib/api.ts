@@ -126,6 +126,32 @@ export async function fetchTeamsPage(
   };
 }
 
+/**
+ * Teams registered for an event. Unlike rankings, this is available before the event
+ * is played, and for events split into divisions it lists every division's teams.
+ */
+export async function fetchEventTeams(
+  year: number,
+  code: string,
+  user: string,
+  token: string
+): Promise<TeamListing[]> {
+  const teams: TeamListing[] = [];
+  let page = 1;
+  let pageTotal = 1;
+  do {
+    const res = await apiFetch(`${API_BASE}/${year}/teams?eventCode=${code}&page=${page}`, {
+      headers: makeAuthHeader(user, token),
+    });
+    if (res.status !== 200) throw new Error(`API error ${res.status}`);
+    const json = await res.json();
+    teams.push(...parseTeamList(json['teams'] ?? []));
+    pageTotal = typeof json['pageTotal'] === 'number' ? json['pageTotal'] : 1;
+    page++;
+  } while (page <= pageTotal);
+  return teams;
+}
+
 export async function searchTeamByNumber(
   year: string,
   teamNumber: number,
@@ -303,7 +329,8 @@ export async function fetchTeamEvents(
   const res = await apiFetch(`${API_BASE}/${year}/events?teamNumber=${teamNumber}`, {
     headers: makeAuthHeader(user, token),
   });
-  if (res.status !== 200) return [];
+  // An error must surface as an error (with Retry), not be cached as "no events".
+  if (res.status !== 200) throw new Error(`API error ${res.status}`);
   const text = await res.text();
   if (!text.startsWith('{')) return [];
   const json = JSON.parse(text);

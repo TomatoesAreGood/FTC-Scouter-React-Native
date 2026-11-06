@@ -6,9 +6,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
-import { fetchEventRankings, fetchEventSchedule, fetchEventAwards } from '../../lib/api';
+import { fetchEventRankings, fetchEventSchedule, fetchEventAwards, fetchEventTeams } from '../../lib/api';
 import {
-  Award, EventListing, ExtendedEventListing, HybridMatchData, MatchTeam, TeamPerformanceData,
+  Award, EventListing, ExtendedEventListing, ExtendedTeamListing, HybridMatchData, MatchTeam,
+  TeamListing, TeamPerformanceData,
 } from '../../lib/models';
 import { formatSeason, getEventTypeName } from '../../lib/constants';
 import { formatRankValue, getSeasonRanking } from '../../lib/seasons';
@@ -19,12 +20,13 @@ import { colors, fontSize, spacing } from '../../lib/theme';
 import AppHeader, { HeaderButton } from '../../components/AppHeader';
 import SectionHeader from '../../components/SectionHeader';
 import TabStrip from '../../components/TabStrip';
-import { EventRow, rowDivider } from '../../components/ListRows';
+import { EventRow, TeamRow, rowDivider } from '../../components/ListRows';
 import { LoadingView, MessageView } from '../../components/StateViews';
 
 const TABS = ['Teams', 'Rankings', 'Schedule', 'Awards', 'About'];
 
 interface EventCacheEntry {
+  teams?: TeamListing[];
   rankings?: TeamPerformanceData[];
   schedule?: HybridMatchData[][];
   awards?: Award[];
@@ -215,11 +217,15 @@ function EmptyTab({ eventData, what, showDivisions }: { eventData: ExtendedEvent
 }
 
 // ─── Teams Tab ───────────────────────────────────────────────────────────────
+// Teams registered for the event. This comes from /teams?eventCode=, not rankings:
+// rankings only exist once matches are played, so upcoming events (most of the current
+// season) and division parent events would otherwise show no teams at all.
 function TeamsTab({ eventData, cacheKey }: TabProps) {
   const app = useApp();
+  const router = useRouter();
   const bottomPad = useBottomPadding();
-  const res = useEventResource(cacheKey, 'rankings', () =>
-    fetchEventRankings(eventData.year, eventData.code, app.user, app.token)
+  const res = useEventResource(cacheKey, 'teams', () =>
+    fetchEventTeams(eventData.year, eventData.code, app.user, app.token)
   );
 
   if (res.loading) return <LoadingView />;
@@ -227,14 +233,18 @@ function TeamsTab({ eventData, cacheKey }: TabProps) {
 
   const sorted = [...(res.data ?? [])].sort((a, b) => a.teamNumber - b.teamNumber);
 
+  function openTeam(team: TeamListing) {
+    const ext: ExtendedTeamListing = { ...team, year: eventData.year };
+    router.push({ pathname: '/team/[number]', params: { number: String(team.teamNumber), data: JSON.stringify(ext) } });
+  }
+
   return (
     <View style={styles.content}>
       {sorted.length > 0 ? (
         // Rendered outside the list so it stays in place without sticky-header machinery.
         <View style={styles.tableHeader}>
-          <Text style={[styles.th, styles.colTeamNumber]}>Team</Text>
-          <Text style={[styles.th, styles.colFlex]}>Name</Text>
-          <Text style={styles.thMeta}>{sorted.length} teams</Text>
+          <Text style={[styles.th, styles.colFlex]}>Registered teams</Text>
+          <Text style={styles.thMeta}>{sorted.length}</Text>
         </View>
       ) : null}
       <FlatList
@@ -243,12 +253,7 @@ function TeamsTab({ eventData, cacheKey }: TabProps) {
         refreshControl={refreshControl(res.refreshing, res.refresh)}
         ListEmptyComponent={<EmptyTab eventData={eventData} what="teams" showDivisions />}
         contentContainerStyle={[styles.listContent, bottomPad]}
-        renderItem={({ item }) => (
-          <View style={styles.tableRow}>
-            <Text style={[styles.tdStrong, styles.colTeamNumber]}>{item.teamNumber}</Text>
-            <Text style={[styles.td, styles.colFlex]} numberOfLines={1}>{item.teamName ?? ''}</Text>
-          </View>
-        )}
+        renderItem={({ item }) => <TeamRow team={item} onPress={() => openTeam(item)} />}
       />
     </View>
   );
@@ -503,15 +508,15 @@ function AwardsTab({ eventData, cacheKey }: TabProps) {
   const res = useEventResource(cacheKey, 'awards', () =>
     fetchEventAwards(eventData.year, eventData.code, app.user, app.token)
   );
-  const [rankings, setRankings] = useState<TeamPerformanceData[]>(getCache(cacheKey).rankings ?? []);
+  const [teams, setTeams] = useState<TeamListing[]>(getCache(cacheKey).teams ?? []);
 
-  // Team names come from the rankings endpoint; load them if the Teams/Rankings tabs haven't yet.
+  // Team names come from the event's team list; load it if the Teams tab hasn't yet.
   useEffect(() => {
-    if (getCache(cacheKey).rankings) return;
-    fetchEventRankings(eventData.year, eventData.code, app.user, app.token)
-      .then((r) => {
-        getCache(cacheKey).rankings = r;
-        setRankings(r);
+    if (getCache(cacheKey).teams) return;
+    fetchEventTeams(eventData.year, eventData.code, app.user, app.token)
+      .then((t) => {
+        getCache(cacheKey).teams = t;
+        setTeams(t);
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -521,7 +526,8 @@ function AwardsTab({ eventData, cacheKey }: TabProps) {
   if (res.error) return <ErrorView what="awards" onRetry={res.retry} />;
 
   const names: Record<number, string> = {};
-  for (const r of rankings) if (r.teamName) names[r.teamNumber] = r.teamName;
+  for (const r of getCache(cacheKey).rankings ?? []) if (r.teamName) names[r.teamNumber] = r.teamName;
+  for (const t of teams) if (t.teamName) names[t.teamNumber] = t.teamName;
 
   // Group by award, keeping the API's presentation order; recipients by placement.
   const grouped: { name: string; recipients: Award[] }[] = [];
