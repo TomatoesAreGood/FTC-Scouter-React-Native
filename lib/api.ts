@@ -205,6 +205,19 @@ function stationOrder(station: string): number {
  * with onField=false; older seasons report onField=false for everyone, so a team only
  * counts as sitting out when an alliance-mate in the same match is on the field.
  */
+/**
+ * Match times arrive as the event's local wall-clock time without a zone, e.g.
+ * "2026-11-07T11:15:45.046". Keep "YYYY-MM-DDTHH:MM" as text (converting through Date
+ * would shift it into the phone's time zone). Old and remote events send the placeholder
+ * "0001-01-01T…" for times that were never recorded; treat those as missing.
+ */
+function parseLocalTime(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m || Number(m[1]) < 2000) return null;
+  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
+}
+
 function parseSchedule(raw: any[]): HybridMatchData[] {
   return raw.map((s: any) => {
     const groups: Record<'red' | 'blue' | 'solo', { station: string; onField: boolean; team: MatchTeam }[]> = {
@@ -244,6 +257,8 @@ function parseSchedule(raw: any[]): HybridMatchData[] {
       description: typeof s['description'] === 'string' ? s['description'].replace(/\s+/g, ' ').trim() : null,
       isRedWin: s['redWins'] === true,
       isBlueWin: s['blueWins'] === true,
+      scheduledTime: parseLocalTime(s['startTime']),
+      actualTime: parseLocalTime(s['actualStartTime']),
     };
   });
 }

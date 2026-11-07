@@ -14,7 +14,7 @@ import {
 import { formatSeason, getEventTypeName } from '../../lib/constants';
 import { formatRankValue, getSeasonRanking } from '../../lib/seasons';
 import {
-  formatDateRange, getDayNumber, getTodayDayNumber, openLink, parseRouteData,
+  formatDateRange, formatMatchTime, getDayNumber, getTodayDayNumber, openLink, parseRouteData,
 } from '../../lib/utils';
 import { colors, fontSize, spacing } from '../../lib/theme';
 import AppHeader, { HeaderButton } from '../../components/AppHeader';
@@ -346,6 +346,12 @@ function ScheduleTab({ eventData, cacheKey }: TabProps) {
     allTeams.some((t) => t.dq) ? 'struck through: disqualified' : null,
   ].filter(Boolean);
   const isRemote = sections.length > 0 && sections.every((s) => s.every((m) => m.solo.length > 0));
+  // Multi-day events get a day label wherever the date changes. Remote events are left
+  // out: each team played on its own schedule, so their rows carry the date instead.
+  const matchDates = new Set(
+    sections.flat().map(shownTime).filter((t): t is string => t !== null).map((t) => t.substring(0, 10))
+  );
+  const showDays = !isRemote && matchDates.size > 1;
 
   function toggle(i: number) {
     setCollapsed((prev) => {
@@ -377,15 +383,33 @@ function ScheduleTab({ eventData, cacheKey }: TabProps) {
               expanded={isExpanded}
               onPress={() => toggle(index)}
             />
-            {isExpanded &&
-              matches.map((match, i) => (
-                <MatchRow key={`${match.tournamentLevel}-${match.seriesNumber}-${match.matchNumber}-${i}`} match={match} />
-              ))}
+            {isExpanded && renderMatches(matches, showDays)}
           </View>
         );
       }}
     />
   );
+}
+
+/**
+ * The time shown for a match, using the same rule as the official FTC Events site: once
+ * a match has started, when it actually started; until then, its scheduled time.
+ */
+function shownTime(match: HybridMatchData): string | null {
+  return match.actualTime ?? match.scheduledTime;
+}
+
+function renderMatches(matches: HybridMatchData[], showDays: boolean) {
+  let lastDate: string | null = null;
+  return matches.flatMap((match, i) => {
+    const row = (
+      <MatchRow key={`${match.tournamentLevel}-${match.seriesNumber}-${match.matchNumber}-${i}`} match={match} />
+    );
+    const time = shownTime(match);
+    if (!showDays || time === null || time.substring(0, 10) === lastDate) return [row];
+    lastDate = time.substring(0, 10);
+    return [<Text key={`day-${i}`} style={styles.dayLabel}>{formatMatchTime(time).dayLong}</Text>, row];
+  });
 }
 
 const BRACKET = /^(Upper|Lower|Final) Bracket Round (\d+)/i;
@@ -424,11 +448,16 @@ function matchCaption(match: HybridMatchData): string | null {
 function MatchRow({ match }: { match: HybridMatchData }) {
   const played = match.scoreRedFinal !== null && match.scoreBlueFinal !== null;
   const caption = matchCaption(match);
+  const shown = shownTime(match);
+  const time = shown ? formatMatchTime(shown) : null;
   return (
     <View style={styles.matchRow}>
       <View style={styles.matchLabelCol}>
         <Text style={styles.matchLabel} numberOfLines={1} adjustsFontSizeToFit>{matchLabel(match)}</Text>
         {caption ? <Text style={styles.matchCaption} numberOfLines={2}>{caption}</Text> : null}
+        {/* Remote matches were played on different days per team, so include the date. */}
+        {time && match.solo.length > 0 ? <Text style={styles.matchTime}>{time.day}</Text> : null}
+        {time ? <Text style={styles.matchTime}>{time.time}</Text> : null}
       </View>
       {match.solo.length > 0 ? (
         // Remote match: one team, scored on its own (the API reports it as the blue score).
@@ -726,6 +755,15 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   matchCaption: { fontSize: 10, color: colors.textSecondary, marginTop: 1 },
+  matchTime: { fontSize: 11, color: colors.textSecondary, marginTop: 1, fontVariant: ['tabular-nums'] },
+  dayLabel: {
+    fontSize: fontSize.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
   matchAlliances: { flex: 1, gap: 2 },
   allianceLine: {
     flexDirection: 'row',

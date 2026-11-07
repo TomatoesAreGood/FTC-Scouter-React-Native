@@ -59,6 +59,27 @@ export function getWeekDateRange(seasonStart: string, weekIndex: number): string
   return formatDateRange(toIso(endDay - 6), toIso(endDay));
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * Splits an event-local "YYYY-MM-DDTHH:MM" match time (see parseLocalTime in api.ts) into
+ * display parts. Done with plain arithmetic, never Date's local-time methods, so the
+ * time shown is the time at the venue regardless of the phone's time zone.
+ *   "2026-11-07T13:05" -> { date: "2026-11-07", time: "1:05 PM",
+ *                           day: "Sat 11/7", dayLong: "Saturday, Nov 7" }
+ */
+export function formatMatchTime(value: string): { date: string; time: string; day: string; dayLong: string } {
+  const [y, mo, d, h, mi] = value.split(/[-T:]/).map((n) => parseInt(n, 10));
+  const weekday = WEEKDAYS[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()];
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return {
+    date: value.substring(0, 10),
+    time: `${hour12}:${String(mi).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`,
+    day: `${weekday.substring(0, 3)} ${mo}/${d}`,
+    dayLong: `${weekday}, ${MONTHS_SHORT[mo - 1]} ${d}`,
+  };
+}
+
 /** "2024-11-02", "2024-11-03" -> "Nov 2–3, 2024" */
 export function formatDateRange(start: string, end?: string | null): string {
   if (!start) return '';

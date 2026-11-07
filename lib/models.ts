@@ -77,6 +77,13 @@ export interface HybridMatchData {
   description: string | null;
   isRedWin: boolean;
   isBlueWin: boolean;
+  /**
+   * Scheduled start, as the event's local wall-clock time ("2026-11-07T11:00"; the API
+   * sends no time zone). null when the API has no real time (it sends 0001-01-01).
+   */
+  scheduledTime: string | null;
+  /** When the match actually started, same format; null until it has been played. */
+  actualTime: string | null;
 }
 
 export interface Award {
