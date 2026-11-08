@@ -8,6 +8,13 @@ export default function TabLayout() {
     // The drawer wraps the tab navigator so it overlays both the screen and the tab bar.
     <DrawerProvider>
       <Tabs
+        // Render the tab scenes as plain views (inactive tabs are display: none) instead of in a
+        // nested native screen container. While a pushed screen (event, team, ...) covers the
+        // tabs, Android detaches them, and a nested container then drops all of its views
+        // (react-native-screens ScreenContainer.onDetachedFromWindow) and only rebuilds them
+        // after it's re-attached. Going back, the tabs page would slide in blank, app bar
+        // included. Plain views stay in place, so going back looks the same as going in.
+        detachInactiveScreens={false}
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.brandDark,

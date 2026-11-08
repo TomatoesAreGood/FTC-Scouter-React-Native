@@ -481,12 +481,13 @@ function MatchRow({ match }: { match: HybridMatchData }) {
   );
 }
 
-function TeamNumber({ team, color }: { team: MatchTeam; color: string }) {
+function TeamNumber({ team, color, won = false }: { team: MatchTeam; color: string; won?: boolean }) {
   return (
     <Text
       style={[
         styles.allianceTeam,
         { color },
+        won && styles.allianceWin,
         (team.sittingOut || team.noShow) && styles.teamSatOut,
         team.dq && styles.teamDq,
       ]}
@@ -514,14 +515,15 @@ function AllianceLine({
           // Empty alliance slot: a bye in the bracket.
           <Text style={[styles.allianceTeam, { color: colors.textTertiary }]}>Bye</Text>
         ) : (
-          teams.map((t) => <TeamNumber key={t.teamNumber} team={t} color={textColor} />)
+          // The winning alliance's teams are bold along with its score.
+          teams.map((t) => <TeamNumber key={t.teamNumber} team={t} color={textColor} won={won} />)
         )}
       </View>
       <Text
         style={[
           styles.allianceScore,
           { color: score === null ? colors.textTertiary : textColor },
-          won && styles.allianceScoreWin,
+          won && styles.allianceWin,
         ]}
       >
         {score === null ? '–' : score}
@@ -783,7 +785,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     fontVariant: ['tabular-nums'],
   },
-  allianceScoreWin: { fontWeight: '700' },
+  allianceWin: { fontWeight: '700' },
 
   // Awards
   awardRow: {

@@ -1,9 +1,14 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
+import JsStack from 'expo-router/js-stack';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { AppProvider, useApp } from '../context/AppContext';
 import { getSavedUser, getSavedToken } from '../lib/storage';
 import { colors } from '../lib/theme';
+import {
+  jsStackRootSwapOptions, jsStackScreenOptions, nativePushAnimation, nativeRootSwapAnimation,
+} from '../lib/navigation';
 
 function AuthGate() {
   const { user, token } = useApp();
@@ -53,17 +58,39 @@ export default function RootLayout() {
       {/* Dark icons on the light green app bar, on both platforms. */}
       <StatusBar style="dark" />
       <AuthGate />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="event/[code]" />
-        <Stack.Screen name="team/[number]" />
-        <Stack.Screen name="about" />
-        <Stack.Screen name="privacy" />
-        <Stack.Screen name="report" />
-        <Stack.Screen name="settings" />
-      </Stack>
+      <RootStack />
     </AppProvider>
+  );
+}
+
+/** Screens pushed on top of the tabs. (auth) and (tabs) are added separately. */
+const PUSHED_SCREENS = ['event/[code]', 'team/[number]', 'about', 'privacy', 'report', 'settings'];
+
+// Android uses the JavaScript stack so going back animates like going forward
+// (see lib/navigation.ts); iOS keeps the native stack and its swipe-back gesture.
+function RootStack() {
+  if (Platform.OS === 'android') {
+    return (
+      <JsStack detachInactiveScreens={false} screenOptions={jsStackScreenOptions}>
+        <JsStack.Screen name="index" />
+        <JsStack.Screen name="(auth)" options={jsStackRootSwapOptions} />
+        <JsStack.Screen name="(tabs)" options={jsStackRootSwapOptions} />
+        {PUSHED_SCREENS.map((name) => <JsStack.Screen key={name} name={name} />)}
+      </JsStack>
+    );
+  }
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.background },
+        animation: nativePushAnimation,
+      }}
+    >
+      <Stack.Screen name="index" />
+      <Stack.Screen name="(auth)" options={{ animation: nativeRootSwapAnimation }} />
+      <Stack.Screen name="(tabs)" options={{ animation: nativeRootSwapAnimation }} />
+      {PUSHED_SCREENS.map((name) => <Stack.Screen key={name} name={name} />)}
+    </Stack>
   );
 }
