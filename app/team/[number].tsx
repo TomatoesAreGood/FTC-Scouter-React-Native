@@ -6,10 +6,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
-import { fetchTeamEvents } from '../../lib/api';
+import { fetchTeamEvents, searchTeamByNumber } from '../../lib/api';
 import { EventListing, ExtendedEventListing, ExtendedTeamListing } from '../../lib/models';
 import { formatSeason } from '../../lib/constants';
-import { parseTeamFullName, getDisplayLocation, parseRouteData, sortEventsByDate } from '../../lib/utils';
+import {
+  getDisplayLocation, openLink, parseRouteData, parseTeamFullName, parseTeamWebsite, sortEventsByDate,
+} from '../../lib/utils';
 import { colors, fontSize, spacing } from '../../lib/theme';
 import AppHeader, { HeaderButton } from '../../components/AppHeader';
 import SectionHeader from '../../components/SectionHeader';
@@ -104,6 +106,19 @@ function TeamDetail({ team }: { team: ExtendedTeamListing }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedYear]);
 
+  // Teams favorited before the app kept websites have no `website` field; look it up once.
+  const [rawWebsite, setRawWebsite] = useState<string | null | undefined>(team.website);
+  useEffect(() => {
+    if (team.website !== undefined) return;
+    let cancelled = false;
+    searchTeamByNumber(String(team.year), team.teamNumber, app.user, app.token)
+      .then((found) => { if (!cancelled) setRawWebsite(found?.website ?? null); })
+      .catch(() => {}); // No website row is the right fallback.
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const website = parseTeamWebsite(rawWebsite);
+
   const { school, sponsors } = parseTeamFullName(team.fullTeamName);
   const location = getDisplayLocation(team);
 
@@ -173,6 +188,7 @@ function TeamDetail({ team }: { team: ExtendedTeamListing }) {
           {sponsors ? <InfoRow icon="business-outline" text={sponsors} /> : null}
           {location ? <InfoRow icon="location-outline" text={location} /> : null}
           {team.rookieYear ? <InfoRow icon="calendar-outline" text={`Rookie year ${team.rookieYear}`} /> : null}
+          {website ? <WebsiteRow label={website.label} onPress={() => openLink(website.url)} /> : null}
         </View>
         <View>
           <SectionHeader title="Events" />
@@ -193,8 +209,26 @@ function InfoRow({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: s
   );
 }
 
+/** Same layout as InfoRow, as a link: link-coloured address, opens in the browser. */
+function WebsiteRow({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.infoRow, pressed && styles.pressed]}
+      accessibilityRole="link"
+      accessibilityLabel={`Team website, ${label}`}
+    >
+      <Ionicons name="globe-outline" size={20} color={colors.textSecondary} style={styles.infoIcon} />
+      <Text style={[styles.infoText, styles.linkText]} numberOfLines={1} ellipsizeMode="middle">{label}</Text>
+      <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  pressed: { backgroundColor: colors.pressed },
+  linkText: { color: colors.link, marginRight: spacing.sm },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',

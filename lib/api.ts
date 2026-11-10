@@ -60,6 +60,7 @@ function parseTeamList(raw: any[]): TeamListing[] {
     stateProv: t['stateProv'] ?? '',
     country: t['country'] ?? '',
     fullTeamName: t['nameFull'] ?? '',
+    website: typeof t['website'] === 'string' ? t['website'] : null,
   }));
 }
 

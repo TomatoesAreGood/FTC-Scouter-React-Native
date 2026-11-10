@@ -32,6 +32,11 @@ export interface TeamListing {
   stateProv: string;
   country: string;
   fullTeamName: string;
+  /**
+   * Website exactly as the team entered it (see parseTeamWebsite). Optional because teams
+   * saved to favorites by older app versions don't have it.
+   */
+  website?: string | null;
 }
 
 export interface ExtendedTeamListing extends TeamListing {

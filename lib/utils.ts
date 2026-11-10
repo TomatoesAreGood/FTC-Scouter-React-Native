@@ -80,6 +80,28 @@ export function formatMatchTime(value: string): { date: string; time: string; da
   };
 }
 
+/**
+ * Turns the free-text website a team entered into a link, or null when there is nothing
+ * usable. Teams type these by hand, so:
+ *  - blank or whitespace -> null; surrounding spaces are trimmed
+ *  - several addresses ("a / b", "a, b", "a & b") -> the first one
+ *  - no scheme ("www.team.org") -> https:// is added so it opens
+ *  - FIRST's own homepage (www.firstinspires.org, used as a placeholder) -> null
+ *  - no real domain ("https://teamname") -> null
+ * `label` is what's shown: the address without the scheme or a trailing slash.
+ */
+export function parseTeamWebsite(raw: string | null | undefined): { url: string; label: string } | null {
+  if (!raw) return null;
+  const first = raw.trim().split(/[\s,]+/)[0]?.replace(/[;,.]+$/, '');
+  if (!first) return null;
+  const url = /^https?:\/\//i.test(first) ? first : `https://${first}`;
+  const host = url.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].toLowerCase();
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?$/.test(host)) return null;
+  if (host === 'firstinspires.org' || host === 'www.firstinspires.org') return null;
+  const label = url.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  return { url, label };
+}
+
 /** "2024-11-02", "2024-11-03" -> "Nov 2–3, 2024" */
 export function formatDateRange(start: string, end?: string | null): string {
   if (!start) return '';
